@@ -90,8 +90,8 @@ def place_sub_fields(main_fields, sub_field_width, care_area_df):
 def output_results(main_fields, sub_fields):
     main_field_df = pd.DataFrame(main_fields)
     sub_field_df = pd.DataFrame(sub_fields)
-    main_field_df.to_csv('mainfields5.csv', index=False, header=False)
-    sub_field_df.to_csv('subfields5.csv', index=False, header=False)
+    main_field_df.to_csv('mainfields.csv', index=False, header=False)
+    sub_field_df.to_csv('subfields.csv', index=False, header=False)
 
 def verify_no_overlap(sub_fields):
     def is_overlapping(sf1, sf2):
