@@ -11,11 +11,17 @@ def parse_input(care_area_file, metadata_file):
     
     try:
         main_field_width = float(metadata_df.iloc[0, 0])
-        sub_field_width = float(metadata_df.iloc[0, 1])
+        sub_field_width = metadata_df.iloc[0, 1]
+        
+        # Handle multiple sub-field sizes
+        if ',' in str(sub_field_width):
+            sub_field_widths = [float(size.strip()) for size in str(sub_field_width).split(',')]
+        else:
+            sub_field_widths = [float(sub_field_width)]
     except ValueError:
         raise ValueError("Metadata values must be numeric.")
     
-    return care_area_df, main_field_width, sub_field_width
+    return care_area_df, main_field_width, sub_field_widths
 
 def place_main_fields(care_area_df, main_field_width):
     main_fields = []
@@ -90,8 +96,8 @@ def place_sub_fields(main_fields, sub_field_width, care_area_df):
 def output_results(main_fields, sub_fields):
     main_field_df = pd.DataFrame(main_fields)
     sub_field_df = pd.DataFrame(sub_fields)
-    main_field_df.to_csv('mainfields.csv', index=False, header=False)
-    sub_field_df.to_csv('subfields.csv', index=False, header=False)
+    main_field_df.to_csv('mainfields4.csv', index=False, header=False)
+    sub_field_df.to_csv('subfields4.csv', index=False, header=False)
 
 def verify_no_overlap(sub_fields):
     def is_overlapping(sf1, sf2):
@@ -115,6 +121,59 @@ def verify_no_overlap(sub_fields):
                 print(f"Overlap detected between Sub-Fields {bounding_boxes[i][4]} and {bounding_boxes[j][4]}")
                 return False
     return True
+
+
+
+
+def place_sub_fields_multiple(main_fields, sub_field_widths, care_area_df):
+    sub_fields = []
+    sf_id = 1
+    
+    # Convert care_area_df to a list of bounding boxes for clipping
+    care_areas = [(row['Xmin'], row['Xmax'], row['Ymin'], row['Ymax']) for _, row in care_area_df.iterrows()]
+    
+    def clip_to_care_area(x_min, x_max, y_min, y_max, sf_id):
+        clipped_sub_fields = []
+        for (ca_xmin, ca_xmax, ca_ymin, ca_ymax) in care_areas:
+            if x_min < ca_xmax and x_max > ca_xmin and y_min < ca_ymax and y_max > ca_ymin:
+                # Clip coordinates to care area boundaries
+                clipped_x_min = max(x_min, ca_xmin)
+                clipped_x_max = min(x_max, ca_xmax)
+                clipped_y_min = max(y_min, ca_ymin)
+                clipped_y_max = min(y_max, ca_ymax)
+                
+                if clipped_x_min < clipped_x_max and clipped_y_min < clipped_y_max:
+                    clipped_sub_fields.append({
+                        'ID': sf_id,
+                        'Xmin': clipped_x_min,
+                        'Xmax': clipped_x_max,
+                        'Ymin': clipped_y_min,
+                        'Ymax': clipped_y_max,
+                        'Main Field ID': mf['ID']
+                    })
+                    sf_id += 1
+        return clipped_sub_fields, sf_id
+    
+    for mf in main_fields:
+        x_min, x_max, y_min, y_max = mf['Xmin'], mf['Xmax'], mf['Ymin'], mf['Ymax']
+        for size in sub_field_widths:
+            x = x_min
+            while x < x_max:
+                y = y_min
+                while y < y_max:
+                    sub_x_max = min(x + size, x_max)
+                    sub_y_max = min(y + size, y_max)
+                    
+                    # Clip sub-field to care areas
+                    clipped_sub_fields, sf_id = clip_to_care_area(x, sub_x_max, y, sub_y_max, sf_id)
+                    sub_fields.extend(clipped_sub_fields)
+                    
+                    y = sub_y_max
+                x = sub_x_max
+    
+    return sub_fields
+
+
 
 
 def area(x_min, x_max, y_min, y_max):
@@ -161,15 +220,21 @@ def optimize_main_field_placement(care_area_df, main_field_width):
     return main_fields
 
 def main():
-    care_area_file = 'CareAreas.csv'
-    metadata_file = 'metadata.csv'
+    care_area_file = 'CareAreas4.csv'
+    metadata_file = 'metadata4.csv'
 
-    care_area_df, main_field_width, sub_field_width = parse_input(care_area_file, metadata_file)
+    care_area_df, main_field_width, sub_field_widths = parse_input(care_area_file, metadata_file)
     
     print("Care Area DataFrame Columns:", care_area_df.columns)
     
     main_fields = optimize_main_field_placement(care_area_df, main_field_width)
-    sub_fields = place_sub_fields(main_fields, sub_field_width, care_area_df)
+    
+    if isinstance(sub_field_widths, list) and len(sub_field_widths) == 1:
+        sub_field_width = sub_field_widths[0]
+        sub_fields = place_sub_fields(main_fields, sub_field_width, care_area_df)
+    else:
+        sub_fields = place_sub_fields_multiple(main_fields, sub_field_widths, care_area_df)
+    
     output_results(main_fields, sub_fields)
     
     if verify_no_overlap(sub_fields):
