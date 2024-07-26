@@ -37,9 +37,35 @@ def place_main_fields(care_area_df, main_field_width):
                     mf_id += 1
     return main_fields
 
-def place_sub_fields(main_fields, sub_field_width):
+def place_sub_fields(main_fields, sub_field_width, care_area_df):
     sub_fields = []
     sf_id = 1
+    
+    # Convert care_area_df to a list of bounding boxes for clipping
+    care_areas = [(row['Xmin'], row['Xmax'], row['Ymin'], row['Ymax']) for _, row in care_area_df.iterrows()]
+    
+    def clip_to_care_area(x_min, x_max, y_min, y_max, sf_id):
+        clipped_sub_fields = []
+        for (ca_xmin, ca_xmax, ca_ymin, ca_ymax) in care_areas:
+            if x_min < ca_xmax and x_max > ca_xmin and y_min < ca_ymax and y_max > ca_ymin:
+                # Clip coordinates to care area boundaries
+                clipped_x_min = max(x_min, ca_xmin)
+                clipped_x_max = min(x_max, ca_xmax)
+                clipped_y_min = max(y_min, ca_ymin)
+                clipped_y_max = min(y_max, ca_ymax)
+                
+                if clipped_x_min < clipped_x_max and clipped_y_min < clipped_y_max:
+                    clipped_sub_fields.append({
+                        'ID': sf_id,
+                        'Xmin': clipped_x_min,
+                        'Xmax': clipped_x_max,
+                        'Ymin': clipped_y_min,
+                        'Ymax': clipped_y_max,
+                        'Main Field ID': mf['ID']
+                    })
+                    sf_id += 1
+        return clipped_sub_fields, sf_id
+    
     for mf in main_fields:
         x_min, x_max, y_min, y_max = mf['Xmin'], mf['Xmax'], mf['Ymin'], mf['Ymax']
         x = x_min
@@ -48,25 +74,24 @@ def place_sub_fields(main_fields, sub_field_width):
             while y < y_max:
                 sub_x_max = min(x + sub_field_width, x_max)
                 sub_y_max = min(y + sub_field_width, y_max)
-                sub_fields.append({
-                    'ID': sf_id,
-                    'Xmin': x,
-                    'Xmax': sub_x_max,
-                    'Ymin': y,
-                    'Ymax': sub_y_max,
-                    'Main Field ID': mf['ID']
-                })
-                sf_id += 1
+                
+                # Clip sub-field to care areas
+                clipped_sub_fields, sf_id = clip_to_care_area(x, sub_x_max, y, sub_y_max, sf_id)
+                sub_fields.extend(clipped_sub_fields)
+                
                 y = sub_y_max
             x = sub_x_max
+    
     return sub_fields
+
+
 
 
 def output_results(main_fields, sub_fields):
     main_field_df = pd.DataFrame(main_fields)
     sub_field_df = pd.DataFrame(sub_fields)
-    main_field_df.to_csv('mainfields1.csv', index=False, header=False)
-    sub_field_df.to_csv('subfields1.csv', index=False, header=False)
+    main_field_df.to_csv('mainfields5.csv', index=False, header=False)
+    sub_field_df.to_csv('subfields5.csv', index=False, header=False)
 
 def verify_no_overlap(sub_fields):
     def is_overlapping(sf1, sf2):
@@ -125,9 +150,9 @@ def optimize_main_field_placement(care_area_df, main_field_width):
                 main_fields.append({
                     'ID': mf_id,
                     'Xmin': x_min,
-                    'Xmax': min(x_min + main_field_width, x_max),
+                    'Xmax': x_min + main_field_width,
                     'Ymin': y_min_temp,
-                    'Ymax': min(y_min_temp + main_field_width, y_max)
+                    'Ymax': y_min_temp + main_field_width
                 })
                 y_min_temp += main_field_width
                 mf_id += 1
@@ -144,7 +169,7 @@ def main():
     print("Care Area DataFrame Columns:", care_area_df.columns)
     
     main_fields = optimize_main_field_placement(care_area_df, main_field_width)
-    sub_fields = place_sub_fields(main_fields, sub_field_width)
+    sub_fields = place_sub_fields(main_fields, sub_field_width, care_area_df)
     output_results(main_fields, sub_fields)
     
     if verify_no_overlap(sub_fields):
